@@ -67,7 +67,7 @@ rules:
     pattern: ureq::$METHOD(...)
     paths:
       exclude:
-        - /src/core/telemetry.rs
+        - src/core/telemetry.rs
     message: >
       ureq usage outside of src/core/telemetry.rs.
       HTTP calls are restricted to the telemetry module to prevent data exfiltration.
