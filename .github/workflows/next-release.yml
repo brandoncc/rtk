@@ -17,9 +17,16 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
       - name: Update Next Release PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -83,12 +90,11 @@ jobs:
             NEXT_PR_NUMBER=$(echo "$NEXT_PR" | jq -r '.number')
           fi
 
+          BODY_FILE=$(mktemp)
+          trap 'rm -f "$BODY_FILE"' EXIT
+
           if [ -z "$NEXT_PR_NUMBER" ]; then
-            TEMPLATE="### Feats
-
-          ### Fix
-
-          ### Other"
+            printf '%s\n\n%s\n\n%s\n' '### Feats' '### Fix' '### Other' > "$BODY_FILE"
 
             PR_CREATE_URL=$(gh pr create \
               --repo "$REPO" \
@@ -96,10 +102,10 @@ jobs:
               --head develop \
               --title "Next Release" \
               --label next-release \
-              --body "$TEMPLATE")
+              --body-file "$BODY_FILE")
 
             NEXT_PR_NUMBER=$(echo "$PR_CREATE_URL" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+')
-            CURRENT_BODY="$TEMPLATE"
+            CURRENT_BODY=$(cat "$BODY_FILE")
           else
             CURRENT_BODY=$(echo "$NEXT_PR" | jq -r '.body')
           fi
@@ -116,14 +122,13 @@ jobs:
               { print }
             ')
           else
-            UPDATED_BODY="${CURRENT_BODY}
-
-          ${SECTION_HEADER}
-          ${ENTRY}"
+            UPDATED_BODY=$(printf '%s\n\n%s\n%s' "$CURRENT_BODY" "$SECTION_HEADER" "$ENTRY")
           fi
 
-          gh pr edit "$NEXT_PR_NUMBER" \
-            --repo "$REPO" \
-            --body "$UPDATED_BODY"
+          printf '%s\n' "$UPDATED_BODY" > "$BODY_FILE"
+          gh api "repos/${REPO}/pulls/${NEXT_PR_NUMBER}" \
+            -X PATCH \
+            -F body=@"$BODY_FILE" \
+            >/dev/null
 
           echo "Updated Next Release PR #${NEXT_PR_NUMBER} — added entry to ### ${SECTION}"
