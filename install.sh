@@ -83,6 +83,30 @@ get_target() {
     esac
 }
 
+checksum_command() {
+    command -v sha256sum >/dev/null 2>&1 && { echo "sha256sum"; return; }
+    command -v shasum >/dev/null 2>&1 && { echo "shasum"; return; }
+    error "Need sha256sum or shasum to verify release checksums"
+}
+
+expected_checksum() {
+    grep " ${BINARY_NAME}-${TARGET}.tar.gz$" "$CHECKSUMS" | awk '{print $1}' | head -1
+}
+
+actual_checksum() {
+    case "$(checksum_command)" in
+        sha256sum) sha256sum "$ARCHIVE" | awk '{print $1}' ;;
+        shasum) shasum -a 256 "$ARCHIVE" | awk '{print $1}' ;;
+    esac
+}
+
+verify_checksum() {
+    EXPECTED=$(expected_checksum)
+    [ -n "$EXPECTED" ] || error "checksums.txt is missing ${BINARY_NAME}-${TARGET}.tar.gz"
+    ACTUAL=$(actual_checksum)
+    [ "$ACTUAL" = "$EXPECTED" ] || error "Checksum mismatch for ${BINARY_NAME}-${TARGET}.tar.gz"
+}
+
 # Download and install
 install() {
     info "Detected: $OS $ARCH"
@@ -90,13 +114,23 @@ install() {
     info "Version: $VERSION"
 
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}-${TARGET}.tar.gz"
+    CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
     TEMP_DIR=$(mktemp -d)
     ARCHIVE="${TEMP_DIR}/${BINARY_NAME}.tar.gz"
+    CHECKSUMS="${TEMP_DIR}/checksums.txt"
 
     info "Downloading from: $DOWNLOAD_URL"
     if ! curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE"; then
         error "Failed to download binary"
     fi
+
+    info "Downloading checksums..."
+    if ! curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS"; then
+        error "Failed to download checksums"
+    fi
+
+    info "Verifying checksum..."
+    verify_checksum
 
     # Verify archive contents before extraction (CWE-22 path traversal).
     # Reject any entry with an absolute path or a ".." component.
@@ -121,9 +155,14 @@ install() {
 
 # Verify installation
 verify() {
-    if command -v "$BINARY_NAME" >/dev/null 2>&1; then
-        info "Verification: $($BINARY_NAME --version)"
+    INSTALLED_BINARY="${INSTALL_DIR}/${BINARY_NAME}"
+    if [ -x "$INSTALLED_BINARY" ]; then
+        info "Verification: $("$INSTALLED_BINARY" --version)"
     else
+        warn "Binary installed but not executable: $INSTALLED_BINARY"
+    fi
+
+    if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
         warn "Binary installed but not in PATH. Add to your shell profile:"
         warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
     fi

@@ -35,6 +35,18 @@
 
 rtk filters and compresses command outputs before they reach your LLM context. Single Rust binary, 100+ supported commands, <10ms overhead.
 
+## Fork Hardening
+
+This fork tracks upstream stable releases and keeps extra supply-chain guardrails around the code, release pipeline, and local agent integration.
+
+- Release installation verifies `checksums.txt` before extracting a downloaded archive, then rejects archives with absolute paths or `..` traversal entries.
+- CI and release workflows pin third-party GitHub Actions to immutable commits, pin container images by digest, and pin cargo, Python, and Go tools used by the pipeline.
+- Workflow permissions default to read-only; jobs that publish releases or update release PRs request write access only at the job level.
+- Release package builds do not receive telemetry secrets.
+- RTK command rewriting is not a bypass mechanism. For exact raw command semantics, use `RTK_DISABLED=1 <command>` or `rtk proxy <command>`; `command find ...` is not a bypass because RTK unwraps shell prefix builtins.
+- `rtk find` intentionally supports the compact common path, not compound predicates like `-o`; use `RTK_DISABLED=1 find ...` when you need raw `find` behavior.
+- Pi integration for Brandon's personal machine lives in agent-config as a personal-only extension/rule. This repo keeps the RTK extension source, but machine policy decides whether it is installed.
+
 ## Token Savings (30-min Claude Code Session)
 
 | Operation | Frequency | Standard | rtk | Savings |

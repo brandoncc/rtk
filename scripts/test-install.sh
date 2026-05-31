@@ -5,7 +5,9 @@
 #   1. Safe archives (single binary, "./prefix", subdirs) are accepted.
 #   2. Archives with absolute paths are rejected pre-extraction.
 #   3. Archives with ".." components are rejected pre-extraction.
-#   4. The check is still present in install.sh (regression guard).
+#   4. The checksum verification is still present in install.sh.
+#   5. Verification runs the installed binary, not another rtk on PATH.
+#   6. The path traversal check is still present in install.sh.
 
 set -eu
 
@@ -81,6 +83,18 @@ for bad in traversal absolute middle end_dotdot; do
 done
 
 echo "==> Regression guard"
+
+if grep -qF 'checksums.txt' "$INSTALL_SH" && grep -qF 'sha256' "$INSTALL_SH"; then
+    pass "install.sh still verifies release checksums"
+else
+    fail "install.sh is missing release checksum verification"
+fi
+
+if grep -qF 'INSTALLED_BINARY=' "$INSTALL_SH" && grep -qF "\"\$INSTALLED_BINARY\" --version" "$INSTALL_SH"; then
+    pass "install.sh verifies the installed binary path"
+else
+    fail "install.sh verifies rtk from PATH instead of the installed binary"
+fi
 
 if grep -qF 'tar -tzf' "$INSTALL_SH" && grep -qF '\.\.' "$INSTALL_SH"; then
     pass "install.sh still contains the path-traversal check"
