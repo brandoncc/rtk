@@ -6,8 +6,9 @@
 #   2. Archives with absolute paths are rejected pre-extraction.
 #   3. Archives with ".." components are rejected pre-extraction.
 #   4. The checksum verification is still present in install.sh.
-#   5. Verification runs the installed binary, not another rtk on PATH.
-#   6. The path traversal check is still present in install.sh.
+#   5. Temporary install files are cleaned on success and failure.
+#   6. Verification runs the installed binary, not another rtk on PATH.
+#   7. The path traversal check is still present in install.sh.
 
 set -eu
 
@@ -88,6 +89,12 @@ if grep -qF 'checksums.txt' "$INSTALL_SH" && grep -qF 'sha256' "$INSTALL_SH"; th
     pass "install.sh still verifies release checksums"
 else
     fail "install.sh is missing release checksum verification"
+fi
+
+if grep -qF "trap 'rm -rf \"\$TEMP_DIR\"' EXIT INT TERM" "$INSTALL_SH"; then
+    pass "install.sh cleans temporary files"
+else
+    fail "install.sh leaves temporary files behind"
 fi
 
 if grep -qF 'INSTALLED_BINARY=' "$INSTALL_SH" && grep -qF "\"\$INSTALLED_BINARY\" --version" "$INSTALL_SH"; then

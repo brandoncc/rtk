@@ -116,6 +116,7 @@ install() {
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}-${TARGET}.tar.gz"
     CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
     TEMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TEMP_DIR"' EXIT INT TERM
     ARCHIVE="${TEMP_DIR}/${BINARY_NAME}.tar.gz"
     CHECKSUMS="${TEMP_DIR}/checksums.txt"
 
@@ -146,9 +147,6 @@ install() {
     mv "${TEMP_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/"
 
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-
-    # Cleanup
-    rm -rf "$TEMP_DIR"
 
     info "Successfully installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
 }
