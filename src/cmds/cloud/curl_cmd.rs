@@ -47,8 +47,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<i32> {
     let is_tty = std::io::stdout().is_terminal();
     let filtered = filter_curl_output(&raw, is_tty);
 
-    println!("{}", filtered.content);
+    print!("{}", filtered.content);
     if let Some(hint) = &filtered.tee_hint {
+        if !filtered.content.ends_with('\n') {
+            println!();
+        }
         println!("{}", hint);
     }
 
@@ -81,7 +84,7 @@ fn filter_curl_output(raw: &str, is_tty: bool) -> FilterResult<'_> {
     // when the consumer already receives the full body.
     if !is_tty || looks_like_json || trimmed.len() < MAX_RESPONSE_SIZE {
         return FilterResult {
-            content: Cow::Borrowed(trimmed),
+            content: Cow::Borrowed(raw),
             tee_hint: None,
         };
     }
@@ -223,6 +226,15 @@ mod tests {
         let result = filter_curl_output(&json, false);
         assert!(!result.content.contains("bytes total"));
         assert!(result.content.ends_with('}'));
+        assert!(result.tee_hint.is_none());
+    }
+
+    #[test]
+    fn test_filter_curl_pipe_preserves_response_bytes() {
+        let body = "\n leading and trailing bytes stay untouched \n";
+        let result = filter_curl_output(body, false);
+
+        assert_eq!(&*result.content, body);
         assert!(result.tee_hint.is_none());
     }
 
