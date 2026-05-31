@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
   CARGO_AUDIT_VERSION: 0.22.1
   GOLANGCI_LINT_VERSION: v2.12.2
   MYPY_VERSION: 2.1.0
