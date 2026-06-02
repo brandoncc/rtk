@@ -82,7 +82,7 @@ fn filter_curl_output(raw: &str, is_tty: bool) -> FilterResult<'_> {
     // Critically, do NOT call `force_tee_hint` on this path — it has a side effect
     // (writes the raw body to a tee log file) and we don't need a recovery file
     // when the consumer already receives the full body.
-    if !is_tty || looks_like_json || trimmed.len() < MAX_RESPONSE_SIZE {
+    if !is_tty || looks_like_json || raw.len() < MAX_RESPONSE_SIZE {
         return FilterResult {
             content: Cow::Borrowed(raw),
             tee_hint: None,
@@ -164,6 +164,15 @@ mod tests {
         let content = "a".repeat(500);
         let result = filter_curl_output(&content, true);
         assert!(result.content.contains("bytes total"));
+    }
+
+    #[test]
+    fn test_filter_curl_tty_counts_raw_response_size() {
+        let content = format!("{}ok", " ".repeat(MAX_RESPONSE_SIZE));
+        let result = filter_curl_output(&content, true);
+
+        assert!(result.content.contains("bytes total"));
+        assert!(result.tee_hint.is_some());
     }
 
     // --- #1536: large JSON must remain parseable for downstream tools ---
