@@ -90,7 +90,9 @@ checksum_command() {
 }
 
 expected_checksum() {
-    grep " ${BINARY_NAME}-${TARGET}.tar.gz$" "$CHECKSUMS" | awk '{print $1}' | head -1
+    awk -v file="${BINARY_NAME}-${TARGET}.tar.gz" \
+        '$2 == file && length($1) == 64 && $1 ~ /^[0-9A-Fa-f]+$/ { print $1; exit }' \
+        "$CHECKSUMS"
 }
 
 actual_checksum() {
@@ -185,4 +187,6 @@ main() {
     info "Installation complete! Run '$BINARY_NAME --help' to get started."
 }
 
-main
+if [ "${RTK_INSTALL_SH_TESTING:-0}" != "1" ]; then
+    main
+fi
