@@ -83,6 +83,32 @@ get_target() {
     esac
 }
 
+checksum_command() {
+    command -v sha256sum >/dev/null 2>&1 && { echo "sha256sum"; return; }
+    command -v shasum >/dev/null 2>&1 && { echo "shasum"; return; }
+    error "Need sha256sum or shasum to verify release checksums"
+}
+
+expected_checksum() {
+    awk -v file="${BINARY_NAME}-${TARGET}.tar.gz" \
+        '$2 == file && length($1) == 64 && $1 ~ /^[0-9A-Fa-f]+$/ { print $1; exit }' \
+        "$CHECKSUMS"
+}
+
+actual_checksum() {
+    case "$(checksum_command)" in
+        sha256sum) sha256sum "$ARCHIVE" | awk '{print $1}' ;;
+        shasum) shasum -a 256 "$ARCHIVE" | awk '{print $1}' ;;
+    esac
+}
+
+verify_checksum() {
+    EXPECTED=$(expected_checksum)
+    [ -n "$EXPECTED" ] || error "checksums.txt is missing ${BINARY_NAME}-${TARGET}.tar.gz"
+    ACTUAL=$(actual_checksum)
+    [ "$ACTUAL" = "$EXPECTED" ] || error "Checksum mismatch for ${BINARY_NAME}-${TARGET}.tar.gz"
+}
+
 # Download and install
 install() {
     info "Detected: $OS $ARCH"
@@ -90,13 +116,24 @@ install() {
     info "Version: $VERSION"
 
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}-${TARGET}.tar.gz"
+    CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
     TEMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TEMP_DIR"' EXIT INT TERM
     ARCHIVE="${TEMP_DIR}/${BINARY_NAME}.tar.gz"
+    CHECKSUMS="${TEMP_DIR}/checksums.txt"
 
     info "Downloading from: $DOWNLOAD_URL"
     if ! curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE"; then
         error "Failed to download binary"
     fi
+
+    info "Downloading checksums..."
+    if ! curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS"; then
+        error "Failed to download checksums"
+    fi
+
+    info "Verifying checksum..."
+    verify_checksum
 
     # Verify archive contents before extraction (CWE-22 path traversal).
     # Reject any entry with an absolute path or a ".." component.
@@ -113,17 +150,19 @@ install() {
 
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
-    # Cleanup
-    rm -rf "$TEMP_DIR"
-
     info "Successfully installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
 }
 
 # Verify installation
 verify() {
-    if command -v "$BINARY_NAME" >/dev/null 2>&1; then
-        info "Verification: $($BINARY_NAME --version)"
+    INSTALLED_BINARY="${INSTALL_DIR}/${BINARY_NAME}"
+    if [ -x "$INSTALLED_BINARY" ]; then
+        info "Verification: $("$INSTALLED_BINARY" --version)"
     else
+        warn "Binary installed but not executable: $INSTALLED_BINARY"
+    fi
+
+    if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
         warn "Binary installed but not in PATH. Add to your shell profile:"
         warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
     fi
@@ -148,4 +187,6 @@ main() {
     info "Installation complete! Run '$BINARY_NAME --help' to get started."
 }
 
-main
+if [ "${RTK_INSTALL_SH_TESTING:-0}" != "1" ]; then
+    main
+fi

@@ -39,21 +39,26 @@ async function rewriteCommand(
 }
 
 export default async function (pi: ExtensionAPI) {
-  // Probe rtk version at load time; disables extension if missing or too old.
-  const ver = await pi.exec("rtk", ["--version"], { timeout: REWRITE_TIMEOUT_MS })
-  if (ver.code !== 0) {
-    console.warn("[rtk] rtk binary not found in PATH — extension disabled")
-    return
-  }
-
-  // Warn and bail if rtk predates 0.23.0 (when `rtk rewrite` was introduced).
-  const parsed = parseSemver(ver.stdout.replace(/^rtk\s+/, ""))
-  if (parsed) {
-    const [major, minor] = parsed
-    if (major === 0 && minor < MIN_SUPPORTED_RTK_MINOR) {
-      console.warn(`[rtk] rtk ${ver.stdout.trim()} is too old (need >= 0.23.0) — extension disabled`)
+  try {
+    // Probe rtk version at load time; disables extension if missing or too old.
+    const ver = await pi.exec("rtk", ["--version"], { timeout: REWRITE_TIMEOUT_MS })
+    if (ver.code !== 0) {
+      console.warn("[rtk] rtk binary not found in PATH — extension disabled")
       return
     }
+
+    // Warn and bail if rtk predates 0.23.0 (when `rtk rewrite` was introduced).
+    const parsed = parseSemver(ver.stdout.replace(/^rtk\s+/, ""))
+    if (parsed) {
+      const [major, minor] = parsed
+      if (major === 0 && minor < MIN_SUPPORTED_RTK_MINOR) {
+        console.warn(`[rtk] rtk ${ver.stdout.trim()} is too old (need >= 0.23.0) — extension disabled`)
+        return
+      }
+    }
+  } catch (err) {
+    console.warn("[rtk] rtk version check failed — extension disabled", err)
+    return
   }
 
   pi.on("tool_call", async (event, ctx) => {

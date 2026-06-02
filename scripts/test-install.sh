@@ -5,7 +5,10 @@
 #   1. Safe archives (single binary, "./prefix", subdirs) are accepted.
 #   2. Archives with absolute paths are rejected pre-extraction.
 #   3. Archives with ".." components are rejected pre-extraction.
-#   4. The check is still present in install.sh (regression guard).
+#   4. The checksum verification is still present in install.sh.
+#   5. Temporary install files are cleaned on success and failure.
+#   6. Verification runs the installed binary, not another rtk on PATH.
+#   7. The path traversal check is still present in install.sh.
 
 set -eu
 
@@ -80,7 +83,76 @@ for bad in traversal absolute middle end_dotdot; do
     fi
 done
 
+# --- Checksum verification through install.sh's real verifier ---
+file_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+run_verify_checksum() (
+    RTK_INSTALL_SH_TESTING=1
+    export RTK_INSTALL_SH_TESTING
+    # shellcheck source=/dev/null
+    . "$INSTALL_SH"
+    BINARY_NAME="rtk"
+    TARGET="test-target"
+    ARCHIVE="$1"
+    CHECKSUMS="$2"
+    export BINARY_NAME TARGET ARCHIVE CHECKSUMS
+    verify_checksum
+)
+
+ARCHIVE_FIXTURE="$TMPDIR/rtk.tar.gz"
+printf 'archive bytes\n' > "$ARCHIVE_FIXTURE"
+ARCHIVE_SHA=$(file_sha256 "$ARCHIVE_FIXTURE")
+GOOD_SUMS="$TMPDIR/checksums.good"
+MISSING_SUMS="$TMPDIR/checksums.missing"
+BAD_SUMS="$TMPDIR/checksums.bad"
+REGEX_TRAP_SUMS="$TMPDIR/checksums.regex-trap"
+printf '%s  rtk-test-target.tar.gz\n' "$ARCHIVE_SHA" > "$GOOD_SUMS"
+: > "$MISSING_SUMS"
+printf '%064d  rtk-test-target.tar.gz\n' 0 > "$BAD_SUMS"
+printf '%s  rtk-test-targetXtarXgz\n' "$ARCHIVE_SHA" > "$REGEX_TRAP_SUMS"
+
+echo "==> Checksum checks"
+
+if run_verify_checksum "$ARCHIVE_FIXTURE" "$GOOD_SUMS"; then
+    pass "matching checksum accepted"
+else
+    fail "matching checksum rejected"
+fi
+
+for bad in missing bad regex-trap; do
+    sums="$TMPDIR/checksums.$bad"
+    if run_verify_checksum "$ARCHIVE_FIXTURE" "$sums" >/dev/null 2>&1; then
+        fail "$bad checksum accepted (should be rejected)"
+    else
+        pass "$bad checksum rejected"
+    fi
+done
+
 echo "==> Regression guard"
+
+if grep -qF 'checksums.txt' "$INSTALL_SH" && grep -qF 'sha256' "$INSTALL_SH"; then
+    pass "install.sh still verifies release checksums"
+else
+    fail "install.sh is missing release checksum verification"
+fi
+
+if grep -qF "trap 'rm -rf \"\$TEMP_DIR\"' EXIT INT TERM" "$INSTALL_SH"; then
+    pass "install.sh cleans temporary files"
+else
+    fail "install.sh leaves temporary files behind"
+fi
+
+if grep -qF 'INSTALLED_BINARY=' "$INSTALL_SH" && grep -qF "\"\$INSTALLED_BINARY\" --version" "$INSTALL_SH"; then
+    pass "install.sh verifies the installed binary path"
+else
+    fail "install.sh verifies rtk from PATH instead of the installed binary"
+fi
 
 if grep -qF 'tar -tzf' "$INSTALL_SH" && grep -qF '\.\.' "$INSTALL_SH"; then
     pass "install.sh still contains the path-traversal check"
